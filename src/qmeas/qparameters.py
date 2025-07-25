@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-from qmeas.qsample import QSample
+from laboneq.dsl.experiment.pulse import PulseFunctional
 
 class QDict:
     def __init__(self, name: str, file: str):
@@ -37,9 +37,10 @@ class QDict:
     
     def save_params(self):
         self._params['timestamp'] = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        sdict = self._generate_serializable_dict()
         try:
             with open(self.file, 'w') as f:
-                json.dump(self._params, f, indent=4)
+                json.dump(sdict, f, indent=4)
 
         except Exception as ex: 
             print(f'Could not save parameters to {self.file}!')
@@ -63,7 +64,49 @@ class QDict:
         
         else:
             raise Exception(f"A parameter named '{key}' does not exist. To add a new parameter, use 'add_parameter'.")
+        
+    def _generate_serializable_dict(self):
+        s_dict = {}
+        for key, val in self._params.items():
+            if isinstance(val, PulseFunctional):
+                s_dict[key] = dict(uid=val.uid, function=val.function, length=val.length, amplitude=val.amplitude, 
+                                   can_compress=val.can_compress, pulse_parameters=val.pulse_parameters)
+                
+            elif isinstance(val, QSample):
+                s_dict[key] = val._params
+                
+            else:
+                try:
+                    _ = json.dumps(key)
+                    _ = json.dumps(val)
+                    s_dict[key] = val
 
+                except Exception as ex:
+                    print(ex)
+                    raise Exception(f'No serialization defined for objects of type {type(val)}')
+
+        return s_dict
+    
+
+class QSample(QDict):
+    def __init__(self, directory: str, sample: str, structure: str):
+        self.dir = directory
+        self.sample = sample
+        self.structure = structure
+        self.name = f'{self.sample}_{self.structure}'
+        self._params = {'directory': directory, 
+                        'sample': sample, 
+                        'structure': structure}
+
+        self.work_dir = os.path.join(directory, sample, structure)
+
+        if not os.path.isdir(self.work_dir):
+            os.makedirs(self.work_dir)
+            print(f'Created working directory for sample {sample} - {structure}: {self.work_dir}')
+
+    def save_params(self):
+        pass
+                                
 
 class QBaseParameters(QDict):
     def __init__(self, sample: QSample, name: str, parameters: dict = None):
@@ -137,9 +180,10 @@ class QLinkedParameters(QDict):
 
     def save_params(self):
         self._params['timestamp'] = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        sdict = self._generate_serializable_dict()
         try:
             with open(self.file, 'w') as f:
-                json.dump(self._params, f, indent=4)
+                json.dump(sdict, f, indent=4)
 
         except Exception as ex: 
             print(f'Could not save parameters to {self.file}!')
